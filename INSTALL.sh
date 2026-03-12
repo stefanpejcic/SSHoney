@@ -1,21 +1,58 @@
 #!/bin/bash
 # SSHoney Installer Script
-# Sets up ephemeral SSH honeypot service
+# Installs Docker rootless if needed, then sets up SSHoney service
 
-# Configuration
-USER_NAME="$USER" # rootless user
+set -e
+
+# Config
+USER_NAME="$USER"
 INSTALL_DIR="$(pwd)"
 SERVICE_FILE="/etc/systemd/system/sshoney.service"
 
-# 1. Build Docker image
-echo "[*] Building Docker image..."
+echo "[*] Starting SSHoney installation..."
+
+# -------------------------
+# 1. Install Docker Rootless if needed
+# -------------------------
+if ! command -v docker &> /dev/null; then
+    echo "[*] Docker not found. Installing Docker rootless..."
+    
+    # Install prerequisites
+    sudo apt-get update
+    sudo apt-get install -y curl uidmap dbus-user-session
+
+    # Install rootless Docker
+    curl -fsSL https://get.docker.com/rootless | sh
+
+    # Add Docker bin to PATH for this session
+    export PATH=$HOME/bin:$PATH
+
+    echo "[+] Docker rootless installed. You may need to log out/in for full PATH update."
+else
+    echo "[+] Docker already installed."
+fi
+
+# Check Docker rootless works
+if ! docker info &> /dev/null; then
+    echo "[!] Docker rootless not working. Please ensure it’s properly installed."
+    exit 1
+fi
+
+# -------------------------
+# 2. Build SSHoney Docker image
+# -------------------------
+echo "[*] Building SSHoney Docker image..."
 docker build -t ssh-honeypot-image "$INSTALL_DIR"
 
-# 2. Create session logs folder
-echo "[*] Creating session-logs folder..."
+# -------------------------
+# 3. Create session-logs folder
+# -------------------------
 mkdir -p "$INSTALL_DIR/session-logs"
+echo "[+] Session logs folder created at $INSTALL_DIR/session-logs"
 
-# 3. Create systemd service file
+# -------------------------
+# 4. Create systemd service
+# -------------------------
 echo "[*] Creating systemd service file..."
 sudo bash -c "cat > $SERVICE_FILE" <<EOL
 [Unit]
@@ -34,7 +71,9 @@ Restart=always
 WantedBy=multi-user.target
 EOL
 
-# 4. Reload systemd, enable and start service
+# -------------------------
+# 5. Enable and start service
+# -------------------------
 echo "[*] Reloading systemd daemon..."
 sudo systemctl daemon-reload
 
