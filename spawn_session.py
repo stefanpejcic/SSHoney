@@ -1,34 +1,41 @@
-# File: spawn_session.py
 import subprocess
-import time
 import os
-import sys
+import time
 
 SESSION_LOGS_DIR = os.path.abspath("./session-logs")
+CONTAINER_TIMEOUT = 3600  # 1 hour
 
 def spawn_session(attacker_ip):
-    timestamp = int(time.time())
-    log_file_host = os.path.join(SESSION_LOGS_DIR, f"session_{timestamp}.log")
-
-    # Ensure the log file exists
+    container_name = f"honeypot_{attacker_ip.replace('.', '_')}"
+    log_file_host = os.path.join(SESSION_LOGS_DIR, f"session_{attacker_ip}.log")
+    
+    # Ensure log file exists
+    os.makedirs(os.path.dirname(log_file_host), exist_ok=True)
     open(log_file_host, 'a').close()
 
-    # Run ephemeral container with single log file mounted
+    # Check if container already exists
+    result = subprocess.run(["docker", "ps", "-q", "-f", f"name={container_name}"], capture_output=True, text=True)
+    if result.stdout.strip():
+        print(f"[+] Existing container found for {attacker_ip}, reusing log file.")
+        return
+
+    # Run ephemeral container in background
     cmd = [
         "docker", "run", "--rm",
-        "--name", f"honeypot_{timestamp}",
+        "--name", container_name,
         "-v", f"{log_file_host}:/var/log/session.log",
-        "-p", "0:22",  # Random host port
+        "-p", "0:22",
         "ssh-honeypot-image"
     ]
+    print(f"[+] Spawning new container for {attacker_ip}")
+    subprocess.Popen(cmd)
 
-    print(f"[+] Spawning ephemeral honeypot container for IP {attacker_ip}")
-    subprocess.run(cmd)
-    print(f"[+] Container terminated. Session log saved at {log_file_host}")
+    # Schedule auto-cleanup after 1 hour
+    def cleanup():
+        time.sleep(CONTAINER_TIMEOUT)
+        subprocess.run(["docker", "rm", "-f", container_name])
+        print(f"[+] Container {container_name} auto-terminated after 1 hour")
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python spawn_session.py <attacker_ip>")
-        sys.exit(1)
-    attacker_ip = sys.argv[1]
-    spawn_session(attacker_ip)
+    import threading
+    threading.Thread(target=cleanup, daemon=True).start()
+    
