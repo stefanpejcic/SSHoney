@@ -33,18 +33,22 @@ jobs:
         mkdir -p session-logs
         touch $LOG_FILE
 
-        docker run -d --rm \
+        # Run container with random host port mapping
+        CONTAINER_ID=$(docker run -d --rm \
           --name $CONTAINER_NAME \
           -v "$PWD/$LOG_FILE:/var/log/session.log" \
-          -p 2222:22 \
-          ssh-honeypot-image
+          -P \
+          ssh-honeypot-image)
 
+        echo "Container started: $CONTAINER_ID"
         # Wait a few seconds for SSH server to start
         sleep 5
 
-    - name: Set SSH port
+    - name: Detect SSH host port
       run: |
-        echo "PORT=2222" >> $GITHUB_ENV
+        PORT=$(docker port honeypot_test 22 | cut -d':' -f2)
+        echo "Using host port $PORT"
+        echo "PORT=$PORT" >> $GITHUB_ENV
 
     - name: Test SSH connection and run commands
       run: |
