@@ -13,10 +13,18 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v3
 
-    - name: Install dependencies
+    - name: Install dependencies and Docker rootless
       run: |
+        sudo apt-get remove -y docker docker-engine docker.io containerd runc || true
         sudo apt-get update
-        sudo apt-get install -y sshpass openssh-client docker.io
+        sudo apt-get install -y curl uidmap dbus-user-session sshpass openssh-client
+
+        # Install rootless Docker
+        curl -fsSL https://get.docker.com/rootless | sh
+        export PATH=$HOME/bin:$PATH
+
+        # Verify Docker
+        docker info
 
     - name: Run SSHoney INSTALL.sh
       run: |
@@ -24,8 +32,7 @@ jobs:
         ./INSTALL.sh
 
     - name: Wait for SSHoney service to start
-      run: |
-        sleep 10
+      run: sleep 10
 
     - name: Detect ephemeral container port
       id: get_port
@@ -45,7 +52,7 @@ jobs:
         export SSHPASS="anything"
         sshpass -e ssh -o StrictHostKeyChecking=no -p $PORT root@127.0.0.1 "whoami; pwd; ls" > test_output.txt
 
-    - name: Check logs were created
+    - name: Check log file was created and contains commands
       run: |
         LOG_FILE=$(ls session-logs/session_*.log | head -n1)
         echo "Checking log file: $LOG_FILE"
