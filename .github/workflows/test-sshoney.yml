@@ -1,0 +1,64 @@
+name: Test SSHoney Installation and Session
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y sshpass openssh-client docker.io
+
+    - name: Run SSHoney INSTALL.sh
+      run: |
+        chmod +x ./INSTALL.sh
+        ./INSTALL.sh
+
+    - name: Wait for SSHoney service to start
+      run: |
+        sleep 10
+
+    - name: Detect ephemeral container port
+      id: get_port
+      run: |
+        # Find the first running honeypot container
+        CONTAINER=$(docker ps -q -f "name=honeypot")
+        if [ -z "$CONTAINER" ]; then
+          echo "No ephemeral container running"
+          exit 1
+        fi
+        PORT=$(docker port $CONTAINER 22 | cut -d':' -f2)
+        echo "Found container $CONTAINER on port $PORT"
+        echo "PORT=$PORT" >> $GITHUB_ENV
+
+    - name: Test SSH connection and run commands
+      run: |
+        export SSHPASS="anything"
+        sshpass -e ssh -o StrictHostKeyChecking=no -p $PORT root@127.0.0.1 "whoami; pwd; ls" > test_output.txt
+
+    - name: Check logs were created
+      run: |
+        LOG_FILE=$(ls session-logs/session_*.log | head -n1)
+        echo "Checking log file: $LOG_FILE"
+        if [ ! -f "$LOG_FILE" ]; then
+          echo "Log file not found!"
+          exit 1
+        fi
+        cat "$LOG_FILE" | grep -E "whoami|pwd|ls" || (echo "Commands not logged!" && exit 1)
+
+    - name: Output test results
+      run: |
+        echo "SSH session ran successfully and commands were logged."
+        cat test_output.txt
+        LOG_FILE=$(ls session-logs/session_*.log | head -n1)
+        cat $LOG_FILE
+        
