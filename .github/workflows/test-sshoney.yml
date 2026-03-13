@@ -13,23 +13,15 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v3
 
-    - name: Install dependencies and Docker rootless
+    - name: Install dependencies
       run: |
-        sudo apt-get remove -y docker docker-engine docker.io containerd runc || true
         sudo apt-get update
-        sudo apt-get install -y curl uidmap dbus-user-session sshpass openssh-client
-
-        # Install rootless Docker
-        curl -fsSL https://get.docker.com/rootless | sh
-        export PATH=$HOME/bin:$PATH
-
-        # Verify Docker
-        docker info
+        sudo apt-get install -y sshpass openssh-client python3-pip
 
     - name: Run SSHoney INSTALL.sh
       run: |
         chmod +x ./INSTALL.sh
-        ./INSTALL.sh
+        GITHUB_ACTIONS=1 ./INSTALL.sh
 
     - name: Wait for SSHoney service to start
       run: sleep 10
@@ -37,7 +29,6 @@ jobs:
     - name: Detect ephemeral container port
       id: get_port
       run: |
-        # Find the first running honeypot container
         CONTAINER=$(docker ps -q -f "name=honeypot")
         if [ -z "$CONTAINER" ]; then
           echo "No ephemeral container running"
