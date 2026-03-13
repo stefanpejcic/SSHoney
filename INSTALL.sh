@@ -4,7 +4,9 @@
 
 set -e
 
-# Config
+# -------------------------
+# Configuration
+# -------------------------
 USER_NAME="$USER"
 INSTALL_DIR="$(pwd)"
 SERVICE_FILE="/etc/systemd/system/sshoney.service"
@@ -12,31 +14,41 @@ SERVICE_FILE="/etc/systemd/system/sshoney.service"
 echo "[*] Starting SSHoney installation..."
 
 # -------------------------
-# 1. Install Docker Rootless if needed
+# 1. Check for Docker
 # -------------------------
 if ! command -v docker &> /dev/null; then
     echo "[*] Docker not found. Installing Docker rootless..."
-    
+
+    # Remove conflicting packages if any
+    sudo apt-get remove -y docker docker-engine docker.io containerd runc || true
+
     # Install prerequisites
     sudo apt-get update
     sudo apt-get install -y curl uidmap dbus-user-session
 
     # Install rootless Docker
     curl -fsSL https://get.docker.com/rootless | sh
-
-    # Add Docker bin to PATH for this session
     export PATH=$HOME/bin:$PATH
 
-    echo "[+] Docker rootless installed. You may need to log out/in for full PATH update."
+    echo "[+] Docker rootless installed."
 else
-    echo "[+] Docker already installed."
+    echo "[+] Docker detected."
+
+    # Check if Docker is rootless
+    DOCKER_ROOTLESS=$(docker info --format '{{.SecurityOptions}}' | grep rootless || true)
+    if [ -z "$DOCKER_ROOTLESS" ]; then
+        echo "[*] Docker found but not rootless. Installing rootless Docker..."
+        sudo apt-get remove -y docker docker-engine docker.io containerd runc || true
+        sudo apt-get install -y curl uidmap dbus-user-session
+        curl -fsSL https://get.docker.com/rootless | sh
+        export PATH=$HOME/bin:$PATH
+    else
+        echo "[+] Docker is already rootless."
+    fi
 fi
 
-# Check Docker rootless works
-if ! docker info &> /dev/null; then
-    echo "[!] Docker rootless not working. Please ensure it’s properly installed."
-    exit 1
-fi
+# Verify Docker works
+docker info
 
 # -------------------------
 # 2. Build SSHoney Docker image
@@ -45,7 +57,7 @@ echo "[*] Building SSHoney Docker image..."
 docker build -t ssh-honeypot-image "$INSTALL_DIR"
 
 # -------------------------
-# 3. Create session-logs folder
+# 3. Create session logs folder
 # -------------------------
 mkdir -p "$INSTALL_DIR/session-logs"
 echo "[+] Session logs folder created at $INSTALL_DIR/session-logs"
